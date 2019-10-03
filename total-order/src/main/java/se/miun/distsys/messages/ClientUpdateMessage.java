@@ -14,8 +14,6 @@ public class ClientUpdateMessage extends Message {
 		this.clientList = list;
 	}
 	
-	private UUID userId;
-	
 	private Map<UUID, Integer> vectorClock = new HashMap<UUID, Integer>();
 	
 	private List<String> clientList = new ArrayList<String>();
@@ -34,14 +32,6 @@ public class ClientUpdateMessage extends Message {
 
 	public void setVectorClock(Map<UUID, Integer> vectorClock) {
 		this.vectorClock = vectorClock;
-	}
-
-	public UUID getUserId() {
-		return userId;
-	}
-
-	public void setUserId(UUID userId) {
-		this.userId = userId;
 	}
 
 	public String getMessage() {

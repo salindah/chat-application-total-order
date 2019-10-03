@@ -10,20 +10,18 @@ public class ChatMessage extends Message {
 	private String chat = "";
 	
 	private String userName = "";
-	
-	private UUID userId;
-		
+			
 	private Map<UUID, Integer> vectorClock;
 	
 	private Integer delay;
 	
-	public ChatMessage(UUID userId, String userName, String chat) {
+	public ChatMessage(Long userId, String userName, String chat) {
 		this.userId = userId;
 		this.userName = userName;
 		this.chat = chat;
 	}
 	
-	public ChatMessage(UUID userId, String userName, int index) {
+	public ChatMessage(Long userId, String userName, int index) {
 		this.userId = userId;
 		this.userName = userName;
 		this.chat = "Test message " + index;
@@ -51,14 +49,6 @@ public class ChatMessage extends Message {
 
 	public void setUserName(String userName) {
 		this.userName = userName;
-	}
-
-	public UUID getUserId() {
-		return userId;
-	}
-
-	public void setUserId(UUID userId) {
-		this.userId = userId;
 	}
 
 	public Map<UUID, Integer> getVectorClock() {

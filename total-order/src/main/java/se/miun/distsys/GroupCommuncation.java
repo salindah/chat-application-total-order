@@ -32,20 +32,20 @@ public class GroupCommuncation {
 	LeaveMessageListener leaveMessageListener = null;
 	UpdateMessageListener updateMessageListerner = null;
 	ActiveUserHandler activeUserHandler = null;
-	CausalOrderingHandler orderingHandler = null;
-	UUID userId;
+	
+	Long userId;
 	String userName = "";
 	
 	public GroupCommuncation() {		
 	}	
 	
-	public GroupCommuncation(UUID userId, String userName) {			
+	public GroupCommuncation(Long userId, String userName) {			
 		try {
 			this.userId = userId;
 			this.userName = userName;
 			runGroupCommuncation = true;	
 			activeUserHandler = new ActiveUserHandler();
-			orderingHandler = new CausalOrderingHandler(this.userId, this);
+			
 			datagramSocket = new MulticastSocket(datagramSocketPort);
 						
 			RecieveThread rt = new RecieveThread();
@@ -85,15 +85,13 @@ public class GroupCommuncation {
 			if(message instanceof ChatMessage) {				
 				ChatMessage chatMessage = (ChatMessage) message;				
 				if(chatMessageListener != null){											
-					if(!chatMessage.getUserId().equals(orderingHandler.getUserId())) {
-						orderingHandler.processChatMessage(chatMessage);
-					} 												
+																
 				}
 			} else if (message instanceof JoinMessage) {
 				JoinMessage joinMessage = (JoinMessage) message;
 				if(joinMessageListener != null) {					
 					activeUserHandler.addClient(joinMessage.getUserName());
-					orderingHandler.putElement(joinMessage.getUserId(), 0);
+					
 					joinMessageListener.onIncomingJoinMessage(joinMessage);							
 				}
 				
@@ -110,7 +108,7 @@ public class GroupCommuncation {
 					updateMessageListerner.onIncomingUpdateMessage(clientUpdateMessage);
 					clientListUpdated = true;
 				}
-				orderingHandler.updateClock(clientUpdateMessage);								
+											
 			} else {				
 				System.out.println("Unknown message type");
 			}			
@@ -121,9 +119,9 @@ public class GroupCommuncation {
 		
 		private ChatMessage chatMessage;
 		
-		private UUID userId;
+		private Long userId;
 		
-		public ChatBotThread(ChatMessage chatMessage, UUID userId) {		
+		public ChatBotThread(ChatMessage chatMessage, Long userId) {		
 			this.chatMessage = chatMessage;
 			this.userId = userId;
 		}
@@ -132,8 +130,7 @@ public class GroupCommuncation {
 		public void run() {
 			
 			try {
-						
-				orderingHandler.updateChatMessageWithClock(chatMessage, this.userId);
+										
 				byte[] sendData = messageSerializer.serializeMessage(chatMessage);
 				DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, InetAddress.getByName("255.255.255.255"), datagramSocketPort);
 							
@@ -170,7 +167,6 @@ public class GroupCommuncation {
 	public void sendChatMessage(String chat) {
 		try {
 			ChatMessage chatMessage = new ChatMessage(this.userId, this.userName, chat);
-			orderingHandler.updateChatMessageWithClock(chatMessage, this.userId);	
 			//Immediately deliver to his own node.
 			chatMessageListener.onIncomingChatMessage(chatMessage);	
 			
@@ -207,9 +203,7 @@ public class GroupCommuncation {
 	public void sendClientUpdateMessage() {
 		try {
 			ClientUpdateMessage updateMessage = new ClientUpdateMessage(activeUserHandler.getActiveUserList());
-			updateMessage.setUserId(userId);
-			updateMessage.setVectorClock(orderingHandler.getVectorClock());
-					
+			updateMessage.setUserId(userId);						
 			byte[] sendData = messageSerializer.serializeMessage(updateMessage);
 			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, InetAddress.getByName("255.255.255.255"), datagramSocketPort);
 			datagramSocket.send(sendPacket);
@@ -234,27 +228,11 @@ public class GroupCommuncation {
 		this.updateMessageListerner = updateMessageListerner;
 	}
 
-	public UUID getUserId() {
-		return userId;
-	}
-
-	public void setUserId(UUID userId) {
-		this.userId = userId;
-	}
-
 	public String getUserName() {
 		return userName;
 	}
 
 	public void setUserName(String userName) {
 		this.userName = userName;
-	}
-
-	public CausalOrderingHandler getOrderingHandler() {
-		return orderingHandler;
-	}
-
-	public void setOrderingHandler(CausalOrderingHandler orderingHandler) {
-		this.orderingHandler = orderingHandler;
-	}		
+	}	
 }

@@ -40,7 +40,7 @@ public class WindowProgram implements ChatMessageListener, JoinMessageListener, 
 	JTextPane txtpnChat = new JTextPane();
 	JTextPane txtpnMessage = new JTextPane();
 	JTextField txtAmount = new JTextField();
-	UUID userId;
+	Long userId;
 	String userName = "";
 	
 	GroupCommuncation gc = null;	
@@ -178,9 +178,7 @@ public class WindowProgram implements ChatMessageListener, JoinMessageListener, 
 		} 		
 		
 		if (event.getActionCommand().equalsIgnoreCase("clear")) {
-			txtpnChat.setText("");	
-			txtpnChat.setText(gc.getOrderingHandler().getVectorClock().toString() + "\n"
-					+ gc.getOrderingHandler().getHoldBackQueue().size());				
+			txtpnChat.setText("");			
 		}
 		
 		if (event.getActionCommand().equalsIgnoreCase("send-bulk")) {			
@@ -209,8 +207,9 @@ public class WindowProgram implements ChatMessageListener, JoinMessageListener, 
 		return faker.name().fullName();		
 	}
 	
-	private UUID getUserId() {		
-		return UUID.randomUUID();		
+	private Long getUserId() {	
+		
+		return System.currentTimeMillis();		
 	}
 
 	public void onIncomingUpdateMessage(ClientUpdateMessage updateMessage) {
