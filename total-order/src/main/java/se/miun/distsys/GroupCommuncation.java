@@ -8,11 +8,15 @@ import java.util.Random;
 import java.util.UUID;
 
 import se.miun.distsys.listeners.ChatMessageListener;
+import se.miun.distsys.listeners.ElectionListener;
 import se.miun.distsys.listeners.JoinMessageListener;
 import se.miun.distsys.listeners.LeaveMessageListener;
 import se.miun.distsys.listeners.UpdateMessageListener;
+import se.miun.distsys.messages.AnswerMessage;
 import se.miun.distsys.messages.ChatMessage;
 import se.miun.distsys.messages.ClientUpdateMessage;
+import se.miun.distsys.messages.CoordinatorMessage;
+import se.miun.distsys.messages.ElectionMessage;
 import se.miun.distsys.messages.JoinMessage;
 import se.miun.distsys.messages.LeaveMessage;
 import se.miun.distsys.messages.Message;
@@ -31,7 +35,11 @@ public class GroupCommuncation {
 	JoinMessageListener joinMessageListener = null;
 	LeaveMessageListener leaveMessageListener = null;
 	UpdateMessageListener updateMessageListerner = null;
+	ElectionListener electionListener = null;
+	
+	//Handlers which responsible for different tasks.
 	ActiveUserHandler activeUserHandler = null;
+	ElectionHandler electionHandler = null;
 	
 	Long userId;
 	String userName = "";
@@ -45,9 +53,9 @@ public class GroupCommuncation {
 			this.userName = userName;
 			runGroupCommuncation = true;	
 			activeUserHandler = new ActiveUserHandler();
+			electionHandler = new ElectionHandler(this.userId, this);
 			
-			datagramSocket = new MulticastSocket(datagramSocketPort);
-						
+			datagramSocket = new MulticastSocket(datagramSocketPort);						
 			RecieveThread rt = new RecieveThread();
 			rt.start();			
 		} catch (Exception e) {
@@ -78,38 +86,50 @@ public class GroupCommuncation {
 				}
 			}
 		}
-		
-		
+				
 		private void handleMessage (Message message) {
 			
 			if(message instanceof ChatMessage) {				
 				ChatMessage chatMessage = (ChatMessage) message;				
 				if(chatMessageListener != null){											
-																
+					chatMessageListener.onIncomingChatMessage(chatMessage);											
 				}
 			} else if (message instanceof JoinMessage) {
 				JoinMessage joinMessage = (JoinMessage) message;
 				if(joinMessageListener != null) {					
-					activeUserHandler.addClient(joinMessage.getUserName());
-					
+					activeUserHandler.addClient(joinMessage.getUserId(), joinMessage.getUserName());					
 					joinMessageListener.onIncomingJoinMessage(joinMessage);							
 				}
 				
 			} else if (message instanceof LeaveMessage) {
 				LeaveMessage leaveMessage = (LeaveMessage) message;
 				if(leaveMessageListener != null) {
-					activeUserHandler.removeClient(leaveMessage.getUserName());					
+					activeUserHandler.removeClient(leaveMessage.getUserId());					
 					leaveMessageListener.onIncomingLeaveMessage(leaveMessage);
+					electionHandler.startElection();
 				}				
 			} else if (message instanceof ClientUpdateMessage) {
 				ClientUpdateMessage clientUpdateMessage = (ClientUpdateMessage) message;				
 				if(!clientListUpdated) {
-					activeUserHandler.setActiveUserList(clientUpdateMessage.getClientList());
+					activeUserHandler.setActiveUserMap(clientUpdateMessage.getActiveUserMap());					
 					updateMessageListerner.onIncomingUpdateMessage(clientUpdateMessage);
 					clientListUpdated = true;
-				}
-											
-			} else {				
+					electionHandler.startElection();
+					//sendElectionMessage();
+				}											
+			} else if (message instanceof ElectionMessage) {
+				
+				ElectionMessage electionMessage = (ElectionMessage) message;
+				electionHandler.onElectionMessageReceived(electionMessage);
+			} else if(message instanceof AnswerMessage) {
+				
+				AnswerMessage answerMessage = (AnswerMessage) message;
+				electionHandler.onAnswerMessageReceived(answerMessage);				
+			} else if(message instanceof CoordinatorMessage) {				
+				CoordinatorMessage coordinatorMessage = (CoordinatorMessage) message;
+				electionHandler.onCoordinatorMessageReceived(coordinatorMessage);				
+			}					
+			else {				
 				System.out.println("Unknown message type");
 			}			
 		}		
@@ -118,12 +138,9 @@ public class GroupCommuncation {
 	class ChatBotThread extends Thread {
 		
 		private ChatMessage chatMessage;
-		
-		private Long userId;
-		
+				
 		public ChatBotThread(ChatMessage chatMessage, Long userId) {		
-			this.chatMessage = chatMessage;
-			this.userId = userId;
+			this.chatMessage = chatMessage;			
 		}
 		
 		@Override
@@ -167,8 +184,6 @@ public class GroupCommuncation {
 	public void sendChatMessage(String chat) {
 		try {
 			ChatMessage chatMessage = new ChatMessage(this.userId, this.userName, chat);
-			//Immediately deliver to his own node.
-			chatMessageListener.onIncomingChatMessage(chatMessage);	
 			
 			byte[] sendData = messageSerializer.serializeMessage(chatMessage);
 			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, InetAddress.getByName("255.255.255.255"), datagramSocketPort);
@@ -202,8 +217,7 @@ public class GroupCommuncation {
 	
 	public void sendClientUpdateMessage() {
 		try {
-			ClientUpdateMessage updateMessage = new ClientUpdateMessage(activeUserHandler.getActiveUserList());
-			updateMessage.setUserId(userId);						
+			ClientUpdateMessage updateMessage = new ClientUpdateMessage(this.userId, activeUserHandler.getActiveUserMap());									
 			byte[] sendData = messageSerializer.serializeMessage(updateMessage);
 			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, InetAddress.getByName("255.255.255.255"), datagramSocketPort);
 			datagramSocket.send(sendPacket);
@@ -211,6 +225,44 @@ public class GroupCommuncation {
 			e.printStackTrace();
 		}
 	}
+	
+	public void sendElectionMessage() {
+		try {
+			ElectionMessage electionMessage = new ElectionMessage(this.userId);				
+			byte[] sendData = messageSerializer.serializeMessage(electionMessage);
+			
+			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, InetAddress.getByName("255.255.255.255"), datagramSocketPort);
+			datagramSocket.send(sendPacket);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	public void sendAnswerMessage() {
+		try {
+			AnswerMessage answerMessage = new AnswerMessage(this.userId);				
+			byte[] sendData = messageSerializer.serializeMessage(answerMessage);
+			
+			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, InetAddress.getByName("255.255.255.255"), datagramSocketPort);
+			datagramSocket.send(sendPacket);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	public void sendCoordinatorMessage() {
+		try {
+			CoordinatorMessage coordinatorMessage = new CoordinatorMessage(this.userId);				
+			byte[] sendData = messageSerializer.serializeMessage(coordinatorMessage);
+			
+			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, InetAddress.getByName("255.255.255.255"), datagramSocketPort);
+			datagramSocket.send(sendPacket);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	
 	
 	public void setChatMessageListener(ChatMessageListener listener) {
 		this.chatMessageListener = listener;		
@@ -227,6 +279,14 @@ public class GroupCommuncation {
 	public void setUpdateMessageListener(UpdateMessageListener updateMessageListerner) {
 		this.updateMessageListerner = updateMessageListerner;
 	}
+	
+	public ElectionListener getElectionListener() {
+		return electionListener;
+	}
+
+	public void setElectionListener(ElectionListener electionListener) {
+		this.electionListener = electionListener;
+	}
 
 	public String getUserName() {
 		return userName;
@@ -234,5 +294,13 @@ public class GroupCommuncation {
 
 	public void setUserName(String userName) {
 		this.userName = userName;
-	}	
+	}
+
+	public ElectionHandler getElectionHandler() {
+		return electionHandler;
+	}
+
+	public void setElectionHandler(ElectionHandler electionHandler) {
+		this.electionHandler = electionHandler;
+	}		
 }

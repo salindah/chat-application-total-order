@@ -1,47 +1,35 @@
 package se.miun.distsys.messages;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 public class ClientUpdateMessage extends Message {
 	
 	private static final long serialVersionUID = 6255823412000246032L;
 
-	public ClientUpdateMessage(List<String> list) {
-		this.clientList = list;
-	}
+	private Map<Long, String> activeUserMap;
 	
-	private Map<UUID, Integer> vectorClock = new HashMap<UUID, Integer>();
 	
-	private List<String> clientList = new ArrayList<String>();
-
-	public List<String> getClientList() {
-		return clientList;
+	public ClientUpdateMessage(Long userId, Map<Long, String> map) {
+		this.userId = userId;
+		this.activeUserMap = map;
+	}
+		
+	public Map<Long, String> getActiveUserMap() {
+		return activeUserMap;
 	}
 
-	public void setClientList(List<String> clientList) {
-		this.clientList = clientList;
-	}	
 
-	public Map<UUID, Integer> getVectorClock() {
-		return vectorClock;
-	}
-
-	public void setVectorClock(Map<UUID, Integer> vectorClock) {
-		this.vectorClock = vectorClock;
+	public void setActiveUserMap(Map<Long, String> activeUserMap) {
+		this.activeUserMap = activeUserMap;
 	}
 
 	public String getMessage() {
 		
 		StringBuffer buffer = new StringBuffer("\n****** Active users at the moment *********\n");
-		for(String client : clientList) {
+		for(String client : activeUserMap.values()) {
 			buffer.append( client + "\n");
 		}
 		buffer.append("*********************************************\n");
 		return buffer.toString();			
-	}
-	
+	}	
 }

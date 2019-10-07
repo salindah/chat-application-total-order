@@ -1,39 +1,27 @@
 package se.miun.distsys;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 import se.miun.distsys.messages.JoinMessage;
 import se.miun.distsys.messages.LeaveMessage;
 
 public class ActiveUserHandler {
-	 	
+	 		
+	private Map<Long, String> activeUserMap = new HashMap<Long, String>();
 	
-	private List<String> activeUserList = new ArrayList<String>();
-	
-	
-	public List<String> getActiveUserList() {
-		return activeUserList;
-	}
 
-	public void setActiveUserList(List<String> activeUserList) {
-		this.activeUserList = activeUserList;
-	}
-
-	public void addClient(String userId) {
-		this.activeUserList.add(userId);
+	public void addClient(Long userId, String userName) {
+		this.activeUserMap.put(userId, userName);
 	}
 	
-	public void removeClient(String userId) {
-		int index = this.activeUserList.indexOf(userId);
-		if(index >= 0) {
-			this.activeUserList.remove(index);
+	public void removeClient(Long userId) {
+		
+		if(this.activeUserMap.containsKey(userId)) {			
+			this.activeUserMap.remove(userId);
 		}
 	}
-	
-	public int getIndex(String userId) {
-		return this.activeUserList.indexOf(userId);
-	}
+
 	
 	public void addClientDescription(JoinMessage joinMessage) {	
 		joinMessage.setMessage(joinMessage.getMessage() + getDescription());
@@ -41,11 +29,19 @@ public class ActiveUserHandler {
 	
 	public void addClientDescription(LeaveMessage leaveMessage) {	
 		leaveMessage.setMessage(leaveMessage.getMessage() + getDescription());
-	}
+	}	
 	
+	public Map<Long, String> getActiveUserMap() {
+		return activeUserMap;
+	}
+
+	public void setActiveUserMap(Map<Long, String> activeUserMap) {
+		this.activeUserMap = activeUserMap;
+	}
+
 	public String getDescription() {
 		StringBuffer buffer = new StringBuffer("\n******** Active users at the moment *************\n");
-		for(String client : activeUserList) {
+		for(String client : activeUserMap.values()) {
 			buffer.append( client + "\n");
 		}
 		buffer.append("*****************************************************\n");

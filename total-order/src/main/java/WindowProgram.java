@@ -9,6 +9,7 @@ import javax.swing.JFrame;
 
 import se.miun.distsys.GroupCommuncation;
 import se.miun.distsys.listeners.ChatMessageListener;
+import se.miun.distsys.listeners.ElectionListener;
 import se.miun.distsys.listeners.JoinMessageListener;
 import se.miun.distsys.listeners.LeaveMessageListener;
 import se.miun.distsys.listeners.UpdateMessageListener;
@@ -34,7 +35,8 @@ import javax.swing.JTextField;
 
 //Skeleton code for Distributed systems 9hp, DT050A
 
-public class WindowProgram implements ChatMessageListener, JoinMessageListener, LeaveMessageListener, UpdateMessageListener, ActionListener {
+public class WindowProgram implements ChatMessageListener, JoinMessageListener, LeaveMessageListener,
+UpdateMessageListener, ActionListener, ElectionListener {
 
 	JFrame frame;
 	JTextPane txtpnChat = new JTextPane();
@@ -67,8 +69,9 @@ public class WindowProgram implements ChatMessageListener, JoinMessageListener, 
 		gc.setChatMessageListener(this);
 		gc.setJoinMessageListener(this);
 		gc.setLeaveMessageListener(this);
-		gc.setUpdateMessageListener(this);						
-		frame.setTitle(userName);
+		gc.setUpdateMessageListener(this);	
+		gc.setElectionListener(this);
+		frame.setTitle(userName + " - " + userId);
 		gc.sendJoinMessage();
 		System.out.println("Group Communcation Started");
 	}
@@ -79,7 +82,7 @@ public class WindowProgram implements ChatMessageListener, JoinMessageListener, 
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);	
 		frame.addWindowListener(new java.awt.event.WindowAdapter() {
 	        public void windowClosing(WindowEvent winEvt) {
-	        	gc.sendLeaveMessage();	
+	        	gc.sendLeaveMessage();		        	
 	        	gc.shutdown();
 	        }
 	        public void windowOpened( WindowEvent e ){
@@ -202,13 +205,16 @@ public class WindowProgram implements ChatMessageListener, JoinMessageListener, 
 		gc.sendClientUpdateMessage();
 	}
 	
+	public void onElectionMessage(String message) {
+		txtpnChat.setText(message + "\n" + txtpnChat.getText());		
+	}
+	
 	private String getUserName() {
 		Faker faker = new Faker();
 		return faker.name().fullName();		
 	}
 	
-	private Long getUserId() {	
-		
+	private Long getUserId() {			
 		return System.currentTimeMillis();		
 	}
 
@@ -216,8 +222,9 @@ public class WindowProgram implements ChatMessageListener, JoinMessageListener, 
 		txtpnChat.setText(updateMessage.getMessage() + "\n" + txtpnChat.getText());			
 	}
 
-	public void displayMessage(ClientUpdateMessage updateMessage) {
-		txtpnChat.setText( "[" + updateMessage.getUserId() + "]" + updateMessage.getVectorClock().toString() + "\n" + txtpnChat.getText());	
+	public void displayMessage(ClientUpdateMessage updateMessage) {		
 		
 	}
+
+	
 }
