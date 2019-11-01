@@ -28,7 +28,6 @@ import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowEvent;
-import java.util.UUID;
 
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
@@ -81,9 +80,9 @@ UpdateMessageListener, ActionListener, ElectionListener {
 		frame.setBounds(100, 100, 600, 400);
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);	
 		frame.addWindowListener(new java.awt.event.WindowAdapter() {
-	        public void windowClosing(WindowEvent winEvt) {
-	        	gc.sendLeaveMessage();		        	
+	        public void windowClosing(WindowEvent winEvt) {	        			        	
 	        	gc.shutdown();
+	        	gc.sendLeaveMessage();
 	        }
 	        public void windowOpened( WindowEvent e ){
 	        	txtpnMessage.requestFocus();
@@ -160,7 +159,7 @@ UpdateMessageListener, ActionListener, ElectionListener {
 		c.gridwidth = 1;
 		pane.add(btnSendChatMessage, c);
 		
-		JButton btnClear = new JButton("Print Vector");
+		JButton btnClear = new JButton("Print Coordinator");
 		btnClear.setPreferredSize(new Dimension(100, 50));
 		btnClear.addActionListener(this);
 		btnClear.setActionCommand("clear");
@@ -181,7 +180,10 @@ UpdateMessageListener, ActionListener, ElectionListener {
 		} 		
 		
 		if (event.getActionCommand().equalsIgnoreCase("clear")) {
-			txtpnChat.setText("");			
+			Long cid = gc.getElectionHandler().getCoordinatorId();
+			Long sid = gc.getTotalOrderingHandler().getSequenceNumber();
+			String text = "Cordinator : " + cid.toString() + "\nSequence Id : " + sid;				
+			txtpnChat.setText(text + "\n" + txtpnChat.getText());
 		}
 		
 		if (event.getActionCommand().equalsIgnoreCase("send-bulk")) {			
@@ -192,7 +194,7 @@ UpdateMessageListener, ActionListener, ElectionListener {
 	}
 	
 	public void onIncomingChatMessage(ChatMessage chatMessage) {	
-		txtpnChat.setText(chatMessage.getChatMessage() + "\n" + txtpnChat.getText());				
+		txtpnChat.setText(chatMessage.getMessage() + "\n" + txtpnChat.getText());				
 	}
 
 	public void onIncomingJoinMessage(JoinMessage joinMessage) {

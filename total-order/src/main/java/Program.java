@@ -38,7 +38,7 @@ public class Program implements ChatMessageListener{
 	}
 
 	public void onIncomingChatMessage(ChatMessage chatMessage) {
-		System.out.println("Incoming chat message: " + chatMessage.getChatMessage());
+		System.out.println("Incoming chat message: " + chatMessage.getMessage());
 		
 	}
 }

@@ -5,7 +5,6 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.util.Random;
-import java.util.UUID;
 
 import se.miun.distsys.listeners.ChatMessageListener;
 import se.miun.distsys.listeners.ElectionListener;
@@ -21,10 +20,12 @@ import se.miun.distsys.messages.JoinMessage;
 import se.miun.distsys.messages.LeaveMessage;
 import se.miun.distsys.messages.Message;
 import se.miun.distsys.messages.MessageSerializer;
+import se.miun.distsys.messages.SequenceMessage;
 
 public class GroupCommuncation {
 	
-	private int datagramSocketPort = 8091; //You need to change this!		
+	private int datagramSocketPort = 8091; 
+	private int sequenceServerPort = 8092;
 	DatagramSocket datagramSocket = null;	
 	boolean runGroupCommuncation = true;
 	boolean clientListUpdated = false;
@@ -36,10 +37,13 @@ public class GroupCommuncation {
 	LeaveMessageListener leaveMessageListener = null;
 	UpdateMessageListener updateMessageListerner = null;
 	ElectionListener electionListener = null;
-	
+	SequenceServer sequenceServer = null;
 	//Handlers which responsible for different tasks.
 	ActiveUserHandler activeUserHandler = null;
 	ElectionHandler electionHandler = null;
+	TotalOrderingHandler totalOrderingHandler = null;
+	private Long sequenceNumber = 0L;
+	
 	
 	Long userId;
 	String userName = "";
@@ -53,8 +57,9 @@ public class GroupCommuncation {
 			this.userName = userName;
 			runGroupCommuncation = true;	
 			activeUserHandler = new ActiveUserHandler();
-			electionHandler = new ElectionHandler(this.userId, this);
-			
+			sequenceServer = new SequenceServer();
+			electionHandler = new ElectionHandler(this.userId, this);	
+			totalOrderingHandler = new TotalOrderingHandler(this);
 			datagramSocket = new MulticastSocket(datagramSocketPort);						
 			RecieveThread rt = new RecieveThread();
 			rt.start();			
@@ -65,6 +70,16 @@ public class GroupCommuncation {
 
 	public void shutdown() {
 		runGroupCommuncation = false;		
+	}
+	
+	public void startSequenceServer() {
+		
+		this.sequenceServer.setSequenceNumber(this.sequenceNumber);
+		this.sequenceServer.start(this.sequenceServerPort, sequenceNumber);
+	}
+	
+	public void stopSequenceServer() {
+		this.sequenceServer.stop();
 	}
 	
 
@@ -92,43 +107,54 @@ public class GroupCommuncation {
 			if(message instanceof ChatMessage) {				
 				ChatMessage chatMessage = (ChatMessage) message;				
 				if(chatMessageListener != null){											
-					chatMessageListener.onIncomingChatMessage(chatMessage);											
+					//chatMessageListener.onIncomingChatMessage(chatMessage);	
+					totalOrderingHandler.onIncomingChatMessage(chatMessage, electionHandler.isCoordinator());
 				}
 			} else if (message instanceof JoinMessage) {
 				JoinMessage joinMessage = (JoinMessage) message;
 				if(joinMessageListener != null) {					
-					activeUserHandler.addClient(joinMessage.getUserId(), joinMessage.getUserName());					
+					activeUserHandler.addClient(joinMessage.getUserId(), joinMessage.getUserName());						
 					joinMessageListener.onIncomingJoinMessage(joinMessage);							
 				}
 				
 			} else if (message instanceof LeaveMessage) {
-				LeaveMessage leaveMessage = (LeaveMessage) message;
-				if(leaveMessageListener != null) {
+				LeaveMessage leaveMessage = (LeaveMessage) message;				
+				if(leaveMessageListener != null && !leaveMessage.getUserId().equals(userId)) {
 					activeUserHandler.removeClient(leaveMessage.getUserId());					
 					leaveMessageListener.onIncomingLeaveMessage(leaveMessage);
+					electionHandler.setActiveUserMap(activeUserHandler.getActiveUserMap());
 					electionHandler.startElection();
 				}				
 			} else if (message instanceof ClientUpdateMessage) {
 				ClientUpdateMessage clientUpdateMessage = (ClientUpdateMessage) message;				
 				if(!clientListUpdated) {
-					activeUserHandler.setActiveUserMap(clientUpdateMessage.getActiveUserMap());					
+					activeUserHandler.setActiveUserMap(clientUpdateMessage.getActiveUserMap());	
+					totalOrderingHandler.setSequenceNumber(clientUpdateMessage.getSequenceNumber());
 					updateMessageListerner.onIncomingUpdateMessage(clientUpdateMessage);
 					clientListUpdated = true;
-					electionHandler.startElection();
-					//sendElectionMessage();
+					electionHandler.setActiveUserMap(clientUpdateMessage.getActiveUserMap());
+					electionHandler.startElection();					
 				}											
 			} else if (message instanceof ElectionMessage) {
 				
 				ElectionMessage electionMessage = (ElectionMessage) message;
 				electionHandler.onElectionMessageReceived(electionMessage);
+				
 			} else if(message instanceof AnswerMessage) {
 				
 				AnswerMessage answerMessage = (AnswerMessage) message;
-				electionHandler.onAnswerMessageReceived(answerMessage);				
-			} else if(message instanceof CoordinatorMessage) {				
+				electionHandler.onAnswerMessageReceived(answerMessage);	
+				
+			} else if(message instanceof CoordinatorMessage) {	
+				
 				CoordinatorMessage coordinatorMessage = (CoordinatorMessage) message;
-				electionHandler.onCoordinatorMessageReceived(coordinatorMessage);				
-			}					
+				electionHandler.onCoordinatorMessageReceived(coordinatorMessage);
+				
+			} else if(message instanceof SequenceMessage) {	
+				
+				SequenceMessage sequenceMessage = (SequenceMessage) message;
+				totalOrderingHandler.onSequenceMessageReceived(sequenceMessage, electionHandler.isCoordinator());				
+			} 					
 			else {				
 				System.out.println("Unknown message type");
 			}			
@@ -137,22 +163,32 @@ public class GroupCommuncation {
 	
 	class ChatBotThread extends Thread {
 		
-		private ChatMessage chatMessage;
+		private Long userId;
+		
+		private String userName;
+		
+		private int amount;
 				
-		public ChatBotThread(ChatMessage chatMessage, Long userId) {		
-			this.chatMessage = chatMessage;			
+		public ChatBotThread(Long userId, String userName, int amount) {		
+			this.userId = userId;	
+			this.userName = userName;
+			this.amount = amount;
 		}
 		
 		@Override
 		public void run() {
 			
 			try {
-										
-				byte[] sendData = messageSerializer.serializeMessage(chatMessage);
-				DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, InetAddress.getByName("255.255.255.255"), datagramSocketPort);
-							
-				Thread.sleep(1000 * getRandom(1, 5));				
-				datagramSocket.send(sendPacket);
+				for(int i = 1; i <= amount; i++) {	
+					
+					ChatMessage chatMessage = new ChatMessage(this.userId, this.userName, i);
+					
+					byte[] sendData = messageSerializer.serializeMessage(chatMessage);
+					DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, InetAddress.getByName("255.255.255.255"), datagramSocketPort);
+								
+					Thread.sleep(1000);				
+					datagramSocket.send(sendPacket);
+				}				
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
@@ -167,15 +203,10 @@ public class GroupCommuncation {
 	}
 	
 	public void sendChatMessage(String chat, Integer amount) {
-		try {
-			for(int i = 1; i <= amount; i++) {				
-				ChatMessage chatMessage = new ChatMessage(this.userId, this.userName, i);
-				//Immediately deliver to his own node.
-				chatMessageListener.onIncomingChatMessage(chatMessage);	
-				
-				ChatBotThread thread = new ChatBotThread(chatMessage, this.userId);
+		try {								
+				ChatBotThread thread = new ChatBotThread(this.userId, this.userName, amount);
 				thread.start();				
-			}			
+						
 		} catch (Exception e) {
 			e.printStackTrace();
 		}		
@@ -217,7 +248,7 @@ public class GroupCommuncation {
 	
 	public void sendClientUpdateMessage() {
 		try {
-			ClientUpdateMessage updateMessage = new ClientUpdateMessage(this.userId, activeUserHandler.getActiveUserMap());									
+			ClientUpdateMessage updateMessage = new ClientUpdateMessage(this.userId, activeUserHandler.getActiveUserMap(), this.totalOrderingHandler.getSequenceNumber());									
 			byte[] sendData = messageSerializer.serializeMessage(updateMessage);
 			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, InetAddress.getByName("255.255.255.255"), datagramSocketPort);
 			datagramSocket.send(sendPacket);
@@ -262,6 +293,17 @@ public class GroupCommuncation {
 		}
 	}
 	
+	public void sendSequenceMessage(SequenceMessage sequenceMessage) {
+		try {						
+			byte[] sendData = messageSerializer.serializeMessage(sequenceMessage);
+			
+			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, InetAddress.getByName("255.255.255.255"), datagramSocketPort);
+			datagramSocket.send(sendPacket);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
 	
 	
 	public void setChatMessageListener(ChatMessageListener listener) {
@@ -286,6 +328,14 @@ public class GroupCommuncation {
 
 	public void setElectionListener(ElectionListener electionListener) {
 		this.electionListener = electionListener;
+	}	
+
+	public TotalOrderingHandler getTotalOrderingHandler() {
+		return totalOrderingHandler;
+	}
+
+	public void setTotalOrderingHandler(TotalOrderingHandler totalOrderingHandler) {
+		this.totalOrderingHandler = totalOrderingHandler;
 	}
 
 	public String getUserName() {
@@ -302,5 +352,13 @@ public class GroupCommuncation {
 
 	public void setElectionHandler(ElectionHandler electionHandler) {
 		this.electionHandler = electionHandler;
+	}
+
+	public SequenceServer getSequenceServer() {
+		return sequenceServer;
+	}
+
+	public void setSequenceServer(SequenceServer sequenceServer) {
+		this.sequenceServer = sequenceServer;
 	}		
 }

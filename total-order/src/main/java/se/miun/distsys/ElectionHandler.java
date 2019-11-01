@@ -1,21 +1,20 @@
 package se.miun.distsys;
 
-import java.net.DatagramPacket;
 import java.time.Duration;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import se.miun.distsys.messages.AnswerMessage;
-import se.miun.distsys.messages.ChatMessage;
 import se.miun.distsys.messages.CoordinatorMessage;
 import se.miun.distsys.messages.ElectionMessage;
-import se.miun.distsys.messages.Message;
 
 public class ElectionHandler {
 
 	
-	private static Long COORDINATOR_MSG_TIMEOUT = 50000L;
+	private static Long COORDINATOR_MSG_TIMEOUT = 5000L;
 	
 	private static Long ANSWER_MSG_TIMEOUT = 3000L;
 	
@@ -25,28 +24,34 @@ public class ElectionHandler {
 	
 	private LocalTime electionStartTime;
 	
-	private List<AnswerMessage> answerMessageList = new ArrayList<AnswerMessage>();
+	private List<AnswerMessage> answerMessageList = Collections.synchronizedList(new ArrayList<AnswerMessage>());
+	
+	private Map<Long, String> activeUserMap;
 	
 	private GroupCommuncation parent;
 	
 	//private boolean electionSessionStarted = false;
 	
 	private boolean electionStarted = false;
+	
+	
 		
 	public ElectionHandler(Long userId, GroupCommuncation parent) {
 		this.parent = parent;
-		this.userId = userId;
+		this.userId = userId;		
 	}
 		
 	public void onElectionMessageReceived(ElectionMessage electionMessage) {		
-		//Ensure election message is received only to processes which higher ID
-		System.out.println(electionMessage.getMessage());
-		parent.getElectionListener().onElectionMessage(electionMessage.getMessage());
-		if(isValidElectionMessage(electionMessage)) {			
+		//Ensure election message is received only to processes which higher ID		
+		if(isValidElectionMessage(electionMessage)) {				
+			System.out.println(electionMessage.getMessage());
+			parent.getElectionListener().onElectionMessage(electionMessage.getMessage());
+			
 			coordinatorId = null;
-			parent.sendAnswerMessage();			
+			parent.sendAnswerMessage();
 			if(!electionStarted) {
-				startElection();					
+				startElection();	
+				
 				System.out.println("Election started for the req from : " + electionMessage.getUserId());
 				parent.getElectionListener().onElectionMessage("Election started for the req from : " + electionMessage.getUserId());
 			}
@@ -55,20 +60,30 @@ public class ElectionHandler {
 		}
 	}
 	
-	public void onAnswerMessageReceived(AnswerMessage answerMessage) {		
-		answerMessageList.add(answerMessage);
-		System.out.println(answerMessage.getMessage());
-		parent.getElectionListener().onElectionMessage(answerMessage.getMessage());
+	public void onAnswerMessageReceived(AnswerMessage answerMessage) {	
+		
+		synchronized(this) {
+			
+			if(!answerMessage.getUserId().equals(this.userId)) {
+				answerMessageList.add(answerMessage);
+
+				System.out.println(answerMessage.getMessage());
+				parent.getElectionListener().onElectionMessage(answerMessage.getMessage());
+			}			
+		}		
 	}
 	
 	public void onCoordinatorMessageReceived(CoordinatorMessage coordinatorMessage) {		
-		
-		if(this.coordinatorId == null) {
-			this.coordinatorId = coordinatorMessage.getUserId();			
-			electionStarted = false;
-			System.out.println(coordinatorMessage.getMessage());
-			parent.getElectionListener().onElectionMessage(coordinatorMessage.getMessage());
-		}
+			
+		synchronized(this) {
+			
+			if(!coordinatorMessage.getUserId().equals(this.userId)) {
+				this.coordinatorId = coordinatorMessage.getUserId();			
+				electionStarted = false;				
+				System.out.println(coordinatorMessage.getMessage());
+				parent.getElectionListener().onElectionMessage(coordinatorMessage.getMessage());
+			}			
+		}		
 	}
 	
 	private boolean isValidElectionMessage(ElectionMessage electionMessage) {
@@ -85,55 +100,114 @@ public class ElectionHandler {
 		@Override
 		public void run() {
 			
-			while(answerMessageList.size() == 0) {
-				try {
-					Thread.sleep(300);
-				} catch (InterruptedException e) {			
-					e.printStackTrace();
-				}
-				Long duration = Duration.between(electionStartTime, LocalTime.now()).toMillis();
-				if(duration > ANSWER_MSG_TIMEOUT) {
-					System.out.println("Yeees");
-					sendCoordinatorMessage();
-					break;
-				} else {
-					System.out.println("Nooo");
-				}
-			}
-			
-			if(answerMessageList.size() > 0) {
-				LocalTime start = LocalTime.now();
-				while(coordinatorId == null) {
-					
+			synchronized(this) {
+				while(answerMessageList.size() == 0) {
 					try {
 						Thread.sleep(300);
 					} catch (InterruptedException e) {			
 						e.printStackTrace();
 					}
-					Long duration = Duration.between(start, LocalTime.now()).toMillis();
-					if(duration > COORDINATOR_MSG_TIMEOUT) {
-						startElection();
+					Long duration = Duration.between(electionStartTime, LocalTime.now()).toMillis();
+					if(duration > ANSWER_MSG_TIMEOUT) {
+						System.out.println("Yeees");
+						sendCoordinatorMessage();
 						break;
+					} else {
+						System.out.println("Nooo");
 					}
+					parent.getElectionListener().onElectionMessage("Answer count : " + answerMessageList.size());
 				}
-			}		
+				
+				
+				if(answerMessageList.size() > 0) {
+					
+					for(AnswerMessage message : answerMessageList) {
+						parent.getElectionListener().onElectionMessage("Answer msg from : " + message.getUserId());
+					}
+					
+					LocalTime start = LocalTime.now();
+					while(coordinatorId == null) {
+						
+						try {
+							Thread.sleep(300);
+						} catch (InterruptedException e) {			
+							e.printStackTrace();
+						}
+						Long duration = Duration.between(start, LocalTime.now()).toMillis();
+						if(duration > COORDINATOR_MSG_TIMEOUT) {
+							parent.getElectionListener().onElectionMessage("Coordinate time out");
+							startElection();
+							break;
+						}
+					}
+				}	
+			}	
 		}
 	}
 	
 	public void startElection() {
-		electionStartTime = LocalTime.now();
-		answerMessageList.clear();
-		parent.sendElectionMessage();			
-		electionStarted = true;
-		AnswerMessageChecker checker = new AnswerMessageChecker();
-		checker.start();	
+		
+		if( hasHighestId()) {
+			sendCoordinatorMessage();
+			parent.getElectionListener().onElectionMessage("I am the coordinator");
+		} else {
+			electionStartTime = LocalTime.now();
+			answerMessageList.clear();
+			parent.sendElectionMessage();			
+			electionStarted = true;
+			coordinatorId = null;
+			AnswerMessageChecker checker = new AnswerMessageChecker();
+			checker.start();	
+			parent.getElectionListener().onElectionMessage("Started an election");
+		}		
 	}
 	
 	public void sendCoordinatorMessage() {
+		this.coordinatorId = this.userId;		
 		parent.sendCoordinatorMessage();	
+	}
+	
+	public boolean isCoordinator() {
+		if(this.coordinatorId.equals(this.userId)) {
+			return true;
+		}
+		return false;
 	}
 	
 	public void sendAnswerMessage() {
 		parent.sendAnswerMessage();
 	}
+
+	private boolean hasHighestId() {
+		Long highest = this.userId;
+		if( this.activeUserMap != null && !this.activeUserMap.isEmpty()) {			
+			for(Long id :this.activeUserMap.keySet()) {
+				if(id > highest) {
+					highest = id;
+				}
+			}
+		}
+		
+		if( highest.equals(this.userId)) {
+			return true;
+		}
+		return false;
+	}
+	
+	
+	public Long getCoordinatorId() {
+		return coordinatorId;
+	}
+
+	public void setCoordinatorId(Long coordinatorId) {
+		this.coordinatorId = coordinatorId;
+	}
+
+	public Map<Long, String> getActiveUserMap() {
+		return activeUserMap;
+	}
+
+	public void setActiveUserMap(Map<Long, String> activeUserMap) {
+		this.activeUserMap = activeUserMap;
+	}		
 }
